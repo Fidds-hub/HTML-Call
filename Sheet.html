@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D&D 5e Character Sheet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    </style>
+</head>
+<body class="bg-amber-50">
+    <div id="app" class="w-full max-w-6xl mx-auto p-4 min-h-screen"></div>
+
+    <script>
+        // Character slots - stored in memory only
+        let characterSlots = [null, null, null, null, null];
+        let currentSlot = 0;
+
+        // Character data
+        let character = characterSlots[currentSlot] || {
+            name: 'Adventurer',
+            race: 'Human',
+            class: 'Fighter',
+            level: 1,
+            background: 'Soldier',
+            alignment: 'Neutral Good',
+            inspiration: false,
+            
+            experience: 0,
+            conditions: [],
+            exhaustion: 0,
+            
+            strength: 15,
+            dexterity: 14,
+            constitution: 13,
+            intelligence: 10,
+            wisdom: 12,
+            charisma: 8,
+            
+            proficiencyBonus: 2,
+            savingThrows: ['strength', 'constitution'],
+            skillProficiencies: ['athletics', 'intimidation'],
+            
+            armorClass: 16,
+            speed: 30,
+            maxHP: 12,
+            currentHP: 12,
+            tempHP: 0,
+            hitDice: '1d10',
+            currentHitDice: 1,
+            
+            deathSaveSuccesses: 0,
+            deathSaveFailures: 0,
+            
+            attacks: [
+                { name: 'Longsword', bonus: 4, damage: '1d8+2', type: 'Slashing' }
+            ],
+            
+            spellSlots: {
+                1: { max: 0, current: 0 },
+                2: { max: 0, current: 0 },
+                3: { max: 0, current: 0 },
+                4: { max: 0, current: 0 },
+                5: { max: 0, current: 0 },
+                6: { max: 0, current: 0 },
+                7: { max: 0, current: 0 },
+                8: { max: 0, current: 0 },
+                9: { max: 0, current: 0 }
+            },
+            spellcastingAbility: 'intelligence',
+            
+            spells: [
+                { name: 'Fire Bolt', level: 0, prepared: true, ritual: false, concentration: false },
+                { name: 'Shield', level: 1, prepared: true, ritual: false, concentration: false }
+            ],
+            
+            equipment: [
+                { name: 'Chain Mail', equipped: true, quantity: 1 },
+                { name: 'Longsword', equipped: true, quantity: 1 },
+                { name: 'Shield', equipped: true, quantity: 1 },
+                { name: 'Healing Potion', equipped: false, quantity: 2 }
+            ],
+            copper: 0,
+            silver: 0,
+            gold: 50,
+            platinum: 0,
+            
+            features: [
+                'Second Wind: Recover 1d10+1 HP as bonus action (1/short rest)',
+                'Fighting Style: Defense (+1 AC in armor)'
+            ],
+            
+            personality: 'I face problems head-on.',
+            ideals: 'Responsibility. I do what I must.',
+            bonds: 'I would die to recover an ancient artifact.',
+            flaws: 'I have little respect for those who are not proven warriors.',
+            backstory: '',
+            sessionNotes: ''
+        };
+
+        const xpThresholds = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
+        
+        const conditions = ['Blinded', 'Charmed', 'Deafened', 'Frightened', 'Grappled', 'Incapacitated', 'Invisible', 'Paralyzed', 'Petrified', 'Poisoned', 'Prone', 'Restrained', 'Stunned', 'Unconscious'];
+
+        let activeTab = 'stats';
+        let diceRolls = [];
+
+        const abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'];
+        
+        const skills = {
+            acrobatics: 'dexterity',
+            animalHandling: 'wisdom',
+            arcana: 'intelligence',
+            athletics: 'strength',
+            deception: 'charisma',
+            history: 'intelligence',
+            insight: 'wisdom',
+            intimidation: 'charisma',
+            investigation: 'intelligence',
+            medicine: 'wisdom',
+            nature: 'intelligence',
+            perception: 'wisdom',
+            performance: 'charisma',
+            persuasion: 'charisma',
+            religion: 'intelligence',
+            sleightOfHand: 'dexterity',
+            stealth: 'dexterity',
+            survival: 'wisdom'
+        };
+
+        // Helper functions
+        const calcModifier = (score) => Math.floor((score - 10) / 2);
+        
+        const calcSkillBonus = (skill) => {
+            const ability = skills[skill];
+            const abilityMod = calcModifier(character[ability]);
+            const profBonus = character.skillProficiencies.includes(skill) ? character.proficiencyBonus : 0;
+            return abilityMod + profBonus;
+        };
+
+        const calcSaveBonus = (ability) => {
+            const abilityMod = calcModifier(character[ability]);
+            const profBonus = character.savingThrows.includes(ability) ? character.proficiencyBonus : 0;
+            return abilityMod + profBonus;
+        };
+
+        const formatBonus = (num) => num >= 0 ? `+${num}` : `${num}`;
+
+        const capitalize = (str) => str.replace(/([A-Z])/g, ' $1').trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+        // Save/Load functions (in-memory only)
+        const saveCharacter = () => {
+            characterSlots[currentSlot] = JSON.parse(JSON.stringify(character));
+            alert('Character saved to Slot ' + (currentSlot + 1) + '! (Note: Data is stored in memory only and will be lost on page refresh)');
+        };
+
+        const loadCharacter = () => {
+            if (characterSlots[currentSlot]) {
+                character = JSON.parse(JSON.stringify(characterSlots[currentSlot]));
+                render();
+                alert('Character loaded from Slot ' + (currentSlot + 1) + '!');
+            } else {
+                alert('No character in Slot ' + (currentSlot + 1) + '!');
+            }
+        };
+
+        const switchSlot = (slot) => {
+            characterSlots[currentSlot] = JSON.parse(JSON.stringify(character));
+            currentSlot = slot;
+            if (characterSlots[currentSlot]) {
+                character = JSON.parse(JSON.stringify(characterSlots[currentSlot]));
+            } else {
+                character = createNewCharacter();
+            }
+            render();
+        };
+
+        const createNewCharacter = () => {
+            return {
+                name: 'New Character',
+                race: 'Human',
+                class: 'Fighter',
+                level: 1,
+                background: 'Soldier',
+                alignment: 'Neutral Good',
+                inspiration: false,
+                experience: 0,
+                conditions: [],
+                exhaustion: 0,
+                strength: 10,
+                dexterity: 10,
+                constitution: 10,
+                intelligence: 10,
+                wisdom: 10,
+                charisma: 10,
+                proficiencyBonus: 2,
+                savingThrows: [],
+                skillProficiencies: [],
+                armorClass: 10,
+                speed: 30,
+                maxHP: 10,
+                currentHP: 10,
+                tempHP: 0,
+                hitDice: '1d10',
+                currentHitDice: 1,
+                deathSaveSuccesses: 0,
+                deathSaveFailures: 0,
+                attacks: [],
+                spellSlots: {
+                    1: { max: 0, current: 0 },
+                    2: { max: 0, current: 0 },
+                    3: { max: 0, current: 0 },
+                    4: { max: 0, current: 0 },
+                    5: { max: 0, current: 0 },
+                    6: { max: 0, current: 0 },
+                    7: { max: 0, current: 0 },
+                    8: { max: 0, current: 0 },
+                    9: { max: 0, current: 0 }
+                },
+                spellcastingAbility: 'intelligence',
+                spells: [],
+                equipment: [],
+                copper: 0,
+                silver: 0,
+                gold: 0,
+                platinum: 0,
+                features: [],
+                personality: '',
+                ideals: '',
+                bonds: '',
+                flaws: '',
+                backstory: '',
+                sessionNotes: ''
+            };
+        };
+
+        const shortRest = () => {
+            if (confirm('Take a short rest? This will allow you to spend hit dice to heal.')) {
+                alert('Short rest complete! You can now spend hit dice to heal.');
+            }
+        };
+
+        const longRest = () => {
+            if (confirm('Take a long rest? This will restore HP, half your hit dice, and all spell slots.')) {
+                character.currentHP = character.maxHP;
+                character.tempHP = 0;
+                character.currentHitDice = Math.max(1, Math.floor(character.level / 2));
+                Object.keys(character.spellSlots).forEach(level => {
+                    character.spellSlots[level].current = character.spellSlots[level].max;
+                });
+                character.deathSaveSuccesses = 0;
+                character.deathSaveFailures = 0;
+                render();
+                alert('Long rest complete! HP, hit dice, and spell slots restored.');
+            }
+        };
+
+        const rollDice = (sides, modifier = 0, label = '') => {
+            const roll = Math.floor(Math.random() * sides) + 1;
+            const total = roll + modifier;
+            const result = {
+                label: label || `d${sides}`,
+                roll: roll,
+                modifier: modifier,
+                total: total,
+                time: new Date().toLocaleTimeString()
+            };
+            diceRolls.unshift(result);
+            if (diceRolls.length > 10) diceRolls.pop();
+            render();
+            return total;
+        };
+
+        const rollWithAdvantage = (sides, modifier = 0, label = '') => {
+            const roll1 = Math.floor(Math.random() * sides) + 1;
+            const roll2 = Math.floor(Math.random() * sides) + 1;
+            const roll = Math.max(roll1, roll2);
+            const total = roll + modifier;
+            const result = {
+                label: (label || `d${sides}`) + ' (ADV)',
+                roll: `${roll1}, ${roll2} → ${roll}`,
+                modifier: modifier,
+                total: total,
+                time: new Date().toLocaleTimeString()
+            };
+            diceRolls.unshift(result);
+            if (diceRolls.length > 10) diceRolls.pop();
+            render();
+        };
+
+        const rollWithDisadvantage = (sides, modifier = 0, label = '') => {
+            const roll1 = Math.floor(Math.random() * sides) + 1;
+            const roll2 = Math.floor(Math.random() * sides) + 1;
+            const roll = Math.min(roll1, roll2);
+            const total = roll + modifier;
+            const result = {
+                label: (label || `d${sides}`) + ' (DIS)',
+                roll: `${roll1}, ${roll2} → ${roll}`,
+                modifier: modifier,
+                total: total,
+                time: new Date().toLocaleTimeString()
+            };
+            diceRolls.unshift(result);
+            if (diceRolls.length > 10) diceRolls.pop();
+            render();
+        };
+
+        const exportCharacter = () => {
+            const dataStr = JSON.stringify(character, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            const exportFileDefaultName = `${character.name.replace(/\s/g, '_')}_character.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+        };
+
+        const importCharacter = () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = event => {
+                    try {
+                        character = JSON.parse(event.target.result);
+                        render();
+                        alert('Character imported successfully!');
+                    } catch (err) {
+                        alert('Error importing character file!');
+                    }
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        };
+
+        const toggleCondition = (condition) => {
+            const index = character.conditions.indexOf(condition);
+            if (index > -1) {
+                character.conditions.splice(index, 1);
+            } else {
+                character.conditions.push(condition);
+            }
+            render();
+        };
+
+        // Render function
+        function render() {
+            const app = document.getElementById('app');
+            
+            const spellSaveDC = 8 + character.proficiencyBonus + calcModifier(character[character.spellcastingAbility]);
+            const spellAttackBonus = character.proficiencyBonus + calcModifier(character[character.spellcastingAbility]);
+
+            // Calculate XP progress
+            const currentLevel = Math.min(character.level, 20);
+            const xpForNextLevel = currentLevel < 20 ? xpThresholds[currentLevel] : xpThresholds[19];
+            const xpForCurrentLevel = currentLevel > 1 ? xpThresholds[currentLevel - 1] : 0;
+            const xpProgress = currentLevel < 20 
+                ? Math.floor(((character.experience - xpForCurrentLevel) / (xpForNextLevel - xpForCurrentLevel)) * 100) 
+                : 100;
+
+            app.innerHTML = `
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-red-900 to-red-800 text-amber-100 p-6 rounded-t-lg shadow-lg">
+                    <div class="flex items-center justify-between mb-4">
+                        <h1 class="text-3xl font-bold">D&D 5e Character Sheet</h1>
+                        <div class="flex gap-2">
+                            <button onclick="saveCharacter()" class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-bold text-sm">
+                                💾 Save
+                            </button>
+                            <button onclick="loadCharacter()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-sm">
+                                📂 Load
+                            </button>
+                            <button onclick="exportCharacter()" class="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-bold text-sm">
+                                📤 Export
+                            </button>
+                            <button onclick="importCharacter()" class="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded font-bold text-sm">
+                                📥 Import
+                            </button>
+                            <button onclick="character.inspiration = !character.inspiration; render();" 
+                                class="flex items-center gap-2 px-4 py-2 rounded-lg font-bold ${character.inspiration ? 'bg-yellow-400 text-gray-900' : 'bg-gray-700 text-gray-300'}">
+                                ${character.inspiration ? '⭐' : '☆'} Inspiration
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        ${['name', 'class', 'level', 'race', 'background', 'alignment'].map(field => `
+                            <div>
+                                <label class="block text-xs uppercase mb-1">${capitalize(field)}</label>
+                                <input type="${field === 'level' ? 'number' : 'text'}" 
+                                    value="${character[field]}" 
+                                    onchange="character.${field} = ${field === 'level' ? 'parseInt(this.value) || 1' : 'this.value'}; render();"
+                                    class="w-full px-3 py-2 bg-amber-50 text-gray-900 rounded border-2 border-red-700">
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <!-- XP Progress Bar -->
+                    <div class="mt-4">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span>Level ${character.level} - XP: ${character.experience || 0} / ${xpForNextLevel}</span>
+                            <span>${xpProgress}%</span>
+                        </div>
+                        <div class="w-full bg-red-950 rounded-full h-4 overflow-hidden">
+                            <div class="bg-gradient-to-r from-yellow-400 to-yellow-600 h-4 transition-all duration-500" style="width: ${xpProgress}%"></div>
+                        </div>
+                        <input type="number" value="${character.experience || 0}" 
+                            onchange="character.experience = parseInt(this.value) || 0; render();"
+                            class="mt-2 w-32 px-2 py-1 bg-amber-50 text-gray-900 rounded border-2 border-red-700 text-sm"
+                            placeholder="Enter XP">
+                    </div>
+
+                    <!-- Character Slots -->
+                    <div class="mt-4 flex gap-2">
+                        <span class="text-sm font-bold mr-2">Character Slot:</span>
+                        ${[0,1,2,3,4].map(slot => `
+                            <button onclick="switchSlot(${slot})" 
+                                class="px-3 py-1 rounded font-bold text-sm ${currentSlot === slot ? 'bg-yellow-400 text-gray-900' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}">
+                                ${slot + 1}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="flex flex-wrap gap-2 mt-4 bg-white p-2 rounded-lg shadow">
+                    ${['stats', 'combat', 'spells', 'equipment', 'features', 'notes', 'dice'].map(tab => `
+                        <button onclick="activeTab = '${tab}'; render();" 
+                            class="px-4 py-2 rounded font-semibold ${activeTab === tab ? 'bg-red-900 text-amber-100' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}">
+                            ${capitalize(tab)}
+                        </button>
+                    `).join('')}
+                </div>
+
+                <!-- Tab Content -->
+                <div class="mt-4">
+                    ${activeTab === 'stats' ? renderStatsTab() : ''}
+                    ${activeTab === 'combat' ? renderCombatTab() : ''}
+                    ${activeTab === 'spells' ? renderSpellsTab(spellSaveDC, spellAttackBonus) : ''}
+                    ${activeTab === 'equipment' ? renderEquipmentTab() : ''}
+                    ${activeTab === 'features' ? renderFeaturesTab() : ''}
+                    ${activeTab === 'notes' ? renderNotesTab() : ''}
+                    ${activeTab === 'dice' ? renderDiceTab() : ''}
+                </div>
+            `;
+        }
+
+        function renderStatsTab() {
+            return `
+                <div class="grid md:grid-cols-3 gap-4">
+                    <!-- Abilities -->
+                    <div class="bg-white p-4 rounded-lg shadow-lg border-2 border-red-700">
+                        <h2 class="text-xl font-bold mb-4 text-red-900">Ability Scores</h2>
+                        <div class="space-y-3">
+                            ${abilities.map(ability => `
+                                <div class="flex items-center gap-3">
+                                    <div class="w-16 h-16 bg-red-900 text-amber-100 rounded-full flex items-center justify-center font-bold text-xl">
+                                        ${formatBonus(calcModifier(character[ability]))}
+                                    </div>
+                                    <div class="flex-1">
+                                        <label class="block text-xs uppercase font-semibold text-gray-700">${ability}</label>
+                                        <input type="number" value="${character[ability]}" 
+                                            onchange="character.${ability} = parseInt(this.value) || 10; render();"
+                                            class="w-full px-2 py-1 border-2 border-gray-300 rounded">
+                                    </div>
+                                    <div class="text-xs text-gray-600">
+                                        Save: ${formatBonus(calcSaveBonus(ability))}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="mt-4 p-3 bg-amber-100 rounded border-2 border-amber-600">
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-red-900">${formatBonus(character.proficiencyBonus)}</div>
+                                <div class="text-xs uppercase text-gray-700">Proficiency Bonus</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Combat Stats & HP -->
+                    <div class="space-y-4">
+                        <div class="bg-white p-4 rounded-lg shadow-lg border-2 border-red-700">
+                            <h2 class="text-xl font-bold mb-4 text-red-900">Combat Stats</h2>
+                            <div class="grid grid-cols-3 gap-3 mb-4">
+                                <div class="text-center p-3 bg-red-100 rounded">
+                                    <input type="number" value="${character.armorClass}" 
+                                        onchange="character.armorClass = parseInt(this.value) || 10; render();"
+                                        class="w-full text-2xl font-bold text-red-900 text-center bg-transparent border-none">
+                                    <div class="text-xs uppercase">AC</div>
+                                </div>
+                                <div class="text-center p-3 bg-blue-100 rounded">
+                                    <div class="text-2xl font-bold text-blue-900">${formatBonus(calcModifier(character.dexterity))}</div>
+                                    <div class="text-xs uppercase">Initiative</div>
+                                </div>
+                                <div class="text-center p-3 bg-green-100 rounded">
+                                    <input type="number" value="${character.speed}" 
+                                        onchange="character.speed = parseInt(this.value) || 30; render();"
+                                        class="w-full text-2xl font-bold text-green-900 text-center bg-transparent border-none">
+                                    <div class="text-xs uppercase">Speed</div>
+                                </div>
+                            </div>
+
+                            <div class="bg-gradient-to-r from-red-600 to-red-500 p-4 rounded-lg">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-white">❤️</span>
+                                    <span class="text-white font-bold text-xl">Hit Points</span>
+                                </div>
+                                <div class="text-center mb-2">
+                                    <input type="number" value="${character.currentHP}" 
+                                        onchange="character.currentHP = parseInt(this.value) || 0; render();"
+                                        class="w-20 text-4xl font-bold text-center bg-transparent text-white border-b-2 border-white">
+                                    <span class="text-white mx-2">/</span>
+                                    <input type="number" value="${character.maxHP}" 
+                                        onchange="character.maxHP = parseInt(this.value) || 1; render();"
+                                        class="w-16 text-2xl text-center bg-transparent text-white border-b-2 border-white">
+                                </div>
+                                <div class="flex gap-2 mb-2">
+                                    <button onclick="character.currentHP = Math.max(0, character.currentHP - 1); render();"
+                                        class="flex-1 bg-red-800 hover:bg-red-900 text-white py-2 rounded font-bold">- Damage</button>
+                                    <button onclick="character.currentHP = Math.min(character.maxHP, character.currentHP + 1); render();"
+                                        class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded font-bold">+ Heal</button>
+                                </div>
+                                <div class="text-center text-white text-sm">
+                                    Temp HP: 
+                                    <input type="number" value="${character.tempHP}" 
+                                        onchange="character.tempHP = parseInt(this.value) || 0; render();"
+                                        class="w-16 mx-2 px-2 py-1 text-gray-900 rounded text-center">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-4 rounded-lg shadow-lg border-2 border-gray-700">
+                            <h3 class="font-bold mb-3 text-gray-900">Death Saves</h3>
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm w-24">Successes:</span>
+                                    ${[0,1,2].map(i => `
+                                        <button onclick="character.deathSaveSuccesses = character.deathSaveSuccesses === ${i+1} ? ${i} : ${i+1}; render();"
+                                            class="w-6 h-6 rounded-full border-2 ${i < character.deathSaveSuccesses ? 'bg-green-500 border-green-700' : 'bg-white border-gray-400'}">
+                                        </button>
+                                    `).join('')}
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm w-24">Failures:</span>
+                                    ${[0,1,2].map(i => `
+                                        <button onclick="character.deathSaveFailures = character.deathSaveFailures === ${i+1} ? ${i} : ${i+1}; render();"
+                                            class="w-6 h-6 rounded-full border-2 ${i < character.deathSaveFailures ? 'bg-red-500 border-red-700' : 'bg-white border-gray-400'}">
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-4 rounded-lg shadow-lg border-2 border-purple-700">
+                            <h3 class="font-bold mb-2 text-purple-900">Hit Dice</h3>
+                            <div class="text-center">
+                                <input type="text" value="${character.hitDice}" 
+                                    onchange="character.hitDice = this.value; render();"
+                                    class="w-20 text-xl font-bold text-center border-2 border-gray-300 rounded">
+                                <div class="mt-2">
+                                    <input type="number" value="${character.currentHitDice}" 
+                                        onchange="character.currentHitDice = parseInt(this.value) || 0; render();"
+                                        class="w-12 text-center border-2 border-gray-300 rounded">
+                                    <span class="mx-1">/</span>
+                                    <span>${character.level}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-4 rounded-lg shadow-lg border-2 border-orange-700">
+                            <h3 class="font-bold mb-3 text-orange-900">Conditions</h3>
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                ${conditions.map(condition => `
+                                    <button onclick="toggleCondition('${condition}')" 
+                                        class="px-2 py-1 rounded ${character.conditions.includes(condition) ? 'bg-orange-600 text-white' : 'bg-gray-200 text-gray-700'} hover:opacity-80">
+                                        ${condition}
+                                    </button>
+                                `).join('')}
+                            </div>
+                            <div class="mt-3">
+                                <label class="text-sm font-bold">Exhaustion Level:</label>
+                                <input type="number" min="0" max="6" value="${character.exhaustion}" 
+                                    onchange="character.exhaustion = Math.max(0, Math.min(6, parseInt(this.value) || 0)); render();"
+                                    class="ml-2 w-16 px-2 py-1 border-2 border-gray-300 rounded text-center">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Skills -->
+                    <div class="bg-white p-4 rounded-lg shadow-lg border-2 border-red-700">
+                        <h2 class="text-xl font-bold mb-4 text-red-900">Skills</h2>
+                        <div class="space-y-1 text-sm">
+                            ${Object.keys(skills).map(skill => `
+                                <div class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded">
+                                    <input type="checkbox" ${character.skillProficiencies.includes(skill) ? 'checked' : ''}
+                                        onchange="
+                                            if (this.checked) {
+                                                character.skillProficiencies.push('${skill}');
+                                            } else {
+                                                character.skillProficiencies = character.skillProficiencies.filter(s => s !== '${skill}');
+                                            }
+                                            render();
+                                        "
+                                        class="w-4 h-4">
+                                    <div class="w-8 text-right font-bold">${formatBonus(calcSkillBonus(skill))}</div>
+                                    <div class="flex-1 capitalize">${capitalize(skill)}</div>
+                                    <div class="text-xs text-gray-500 uppercase">${skills[skill].slice(0,3)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="mt-4 p-2 bg-amber-100 rounded text-xs text-center">
+                            <div class="font-bold">Passive Perception</div>
+                            <div class="text-lg font-bold text-red-900">${10 + calcSkillBonus('perception')}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCombatTab() {
+            return `
+                <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-red-700">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold text-red-900">Attacks & Weapons</h2>
+                        <button onclick="character.attacks.push({name: 'New Attack', bonus: 0, damage: '1d6', type: 'Slashing'}); render();"
+                            class="px-4 py-2 bg-red-900 text-white rounded hover:bg-red-800 font-bold">+ Add Attack</button>
+                    </div>
+                    <div class="space-y-3">
+                        ${character.attacks.map((atk, i) => `
+                            <div class="grid grid-cols-5 gap-3 p-3 bg-gray-50 rounded border-2 border-gray-300">
+                                <input type="text" value="${atk.name}" 
+                                    onchange="character.attacks[${i}].name = this.value; render();"
+                                    placeholder="Attack Name" class="px-3 py-2 border-2 border-gray-300 rounded">
+                                <input type="text" value="${atk.bonus}" 
+                                    onchange="character.attacks[${i}].bonus = this.value; render();"
+                                    placeholder="+0" class="px-3 py-2 border-2 border-gray-300 rounded text-center">
+                                <input type="text" value="${atk.damage}" 
+                                    onchange="character.attacks[${i}].damage = this.value; render();"
+                                    placeholder="1d6" class="px-3 py-2 border-2 border-gray-300 rounded text-center">
+                                <input type="text" value="${atk.type}" 
+                                    onchange="character.attacks[${i}].type = this.value; render();"
+                                    placeholder="Type" class="px-3 py-2 border-2 border-gray-300 rounded">
+                                <button onclick="character.attacks.splice(${i}, 1); render();"
+                                    class="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700">Remove</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSpellsTab(dc, bonus) {
+            return `
+                <div class="space-y-4">
+                    <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-purple-700">
+                        <h2 class="text-2xl font-bold text-purple-900 mb-4">Spellcasting</h2>
+                        <div class="grid grid-cols-3 gap-4 mb-6">
+                            <div class="text-center p-4 bg-purple-100 rounded">
+                                <div class="text-sm uppercase mb-1">Spellcasting Ability</div>
+                                <select value="${character.spellcastingAbility}" 
+                                    onchange="character.spellcastingAbility = this.value; render();"
+                                    class="w-full px-3 py-2 border-2 border-gray-300 rounded capitalize">
+                                    ${abilities.map(a => `<option value="${a}">${a}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="text-center p-4 bg-purple-100 rounded">
+                                <div class="text-sm uppercase mb-1">Spell Save DC</div>
+                                <div class="text-3xl font-bold text-purple-900">${dc}</div>
+                            </div>
+                            <div class="text-center p-4 bg-purple-100 rounded">
+                                <div class="text-sm uppercase mb-1">Spell Attack Bonus</div>
+                                <div class="text-3xl font-bold text-purple-900">${formatBonus(bonus)}</div>
+                            </div>
+                        </div>
+
+                        <h3 class="text-xl font-bold mb-3">Spell Slots</h3>
+                        <div class="grid grid-cols-3 md:grid-cols-5 gap-3">
+                            ${Object.keys(character.spellSlots).map(lvl => `
+                                <div class="text-center p-3 bg-purple-50 rounded border-2 border-purple-300">
+                                    <div class="font-bold text-purple-900 mb-2">Level ${lvl}</div>
+                                    <div class="flex items-center justify-center gap-2 mb-2">
+                                        <input type="number" value="${character.spellSlots[lvl].current}" 
+                                            onchange="character.spellSlots[${lvl}].current = parseInt(this.value) || 0; render();"
+                                            class="w-12 text-center border-2 border-gray-300 rounded">
+                                        <span>/</span>
+                                        <input type="number" value="${character.spellSlots[lvl].max}" 
+                                            onchange="character.spellSlots[${lvl}].max = parseInt(this.value) || 0; render();"
+                                            class="w-12 text-center border-2 border-gray-300 rounded">
+                                    </div>
+                                    <div class="flex gap-1">
+                                        <button onclick="character.spellSlots[${lvl}].current = Math.max(0, character.spellSlots[${lvl}].current - 1); render();"
+                                            class="flex-1 px-2 py-1 bg-red-500 text-white text-xs rounded hover:bg-red-600">Use</button>
+                                        <button onclick="character.spellSlots[${lvl}].current = Math.min(character.spellSlots[${lvl}].max, character.spellSlots[${lvl}].current + 1); render();"
+                                            class="flex-1 px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600">Restore</button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-purple-700">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold text-purple-900">Spell List</h2>
+                            <button onclick="character.spells.push({name: 'New Spell', level: 0, prepared: false, ritual: false, concentration: false}); render();"
+                                class="px-4 py-2 bg-purple-900 text-white rounded hover:bg-purple-800 font-bold">+ Add Spell</button>
+                        </div>
+                        <div class="space-y-2">
+                            ${character.spells.sort((a,b) => a.level - b.level).map((spell, i) => `
+                                <div class="grid grid-cols-6 gap-3 p-3 bg-purple-50 rounded border-2 border-purple-300 items-center">
+                                    <input type="text" value="${spell.name}" 
+                                        onchange="character.spells[${i}].name = this.value; render();"
+                                        placeholder="Spell Name" class="col-span-2 px-3 py-2 border-2 border-gray-300 rounded">
+                                    <select value="${spell.level}" 
+                                        onchange="character.spells[${i}].level = parseInt(this.value); render();"
+                                        class="px-3 py-2 border-2 border-gray-300 rounded">
+                                        <option value="0">Cantrip</option>
+                                        ${[1,2,3,4,5,6,7,8,9].map(l => `<option value="${l}">Level ${l}</option>`).join('')}
+                                    </select>
+                                    <div class="flex items-center gap-2">
+                                        <input type="checkbox" ${spell.prepared ? 'checked' : ''}
+                                            onchange="character.spells[${i}].prepared = this.checked; render();"
+                                            class="w-4 h-4">
+                                        <label class="text-sm">Prep</label>
+                                    </div>
+                                    <div class="flex gap-2 text-xs">
+                                        <label class="flex items-center gap-1">
+                                            <input type="checkbox" ${spell.ritual ? 'checked' : ''}
+                                                onchange="character.spells[${i}].ritual = this.checked; render();"
+                                                class="w-3 h-3">
+                                            R
+                                        </label>
+                                        <label class="flex items-center gap-1">
+                                            <input type="checkbox" ${spell.concentration ? 'checked' : ''}
+                                                onchange="character.spells[${i}].concentration = this.checked; render();"
+                                                class="w-3 h-3">
+                                            C
+                                        </label>
+                                    </div>
+                                    <button onclick="character.spells.splice(${i}, 1); render();"
+                                        class="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700">Remove</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderEquipmentTab() {
+            return `
+                <div class="space-y-4">
+                    <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-yellow-700">
+                        <h2 class="text-2xl font-bold text-yellow-900 mb-4">Currency</h2>
+                        <div class="grid grid-cols-4 gap-4">
+                            ${['copper', 'silver', 'gold', 'platinum'].map(coin => `
+                                <div>
+                                    <label class="block text-xs uppercase mb-1">${coin}</label>
+                                    <input type="number" value="${character[coin]}" 
+                                        onchange="character.${coin} = parseInt(this.value) || 0; render();"
+                                        class="w-full px-3 py-2 border-2 border-gray-300 rounded">
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-gray-700">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold text-gray-900">Equipment & Inventory</h2>
+                            <button onclick="character.equipment.push({name: 'New Item', equipped: false, quantity: 1}); render();"
+                                class="px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-800 font-bold">+ Add Item</button>
+                        </div>
+                        <div class="space-y-2">
+                            ${character.equipment.map((item, i) => `
+                                <div class="grid grid-cols-5 gap-3 p-3 bg-gray-50 rounded border-2 border-gray-300">
+                                    <input type="text" value="${item.name}" 
+                                        onchange="character.equipment[${i}].name = this.value; render();"
+                                        placeholder="Item Name" class="col-span-2 px-3 py-2 border-2 border-gray-300 rounded">
+                                    <div class="flex items-center gap-2">
+                                        <input type="checkbox" ${item.equipped ? 'checked' : ''}
+                                            onchange="character.equipment[${i}].equipped = this.checked; render();"
+                                            class="w-5 h-5">
+                                        <label class="text-sm">Equipped</label>
+                                    </div>
+                                    <input type="number" value="${item.quantity}" 
+                                        onchange="character.equipment[${i}].quantity = parseInt(this.value) || 1; render();"
+                                        placeholder="Qty" class="px-3 py-2 border-2 border-gray-300 rounded text-center">
+                                    <button onclick="character.equipment.splice(${i}, 1); render();"
+                                        class="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700">Remove</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFeaturesTab() {
+            return `
+                <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-blue-700">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold text-blue-900">Features & Traits</h2>
+                        <button onclick="character.features.push('New Feature'); render();"
+                            class="px-4 py-2 bg-blue-900 text-white rounded hover:bg-blue-800 font-bold">+ Add Feature</button>
+                    </div>
+                    <div class="space-y-3">
+                        ${character.features.map((feature, i) => `
+                            <div class="flex gap-3 p-3 bg-blue-50 rounded border-2 border-blue-300">
+                                <textarea 
+                                    onchange="character.features[${i}] = this.value; render();"
+                                    placeholder="Feature description"
+                                    class="flex-1 px-3 py-2 border-2 border-gray-300 rounded resize-none"
+                                    rows="2">${feature}</textarea>
+                                <button onclick="character.features.splice(${i}, 1); render();"
+                                    class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Remove</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderNotesTab() {
+            return `
+                <div class="space-y-4">
+                    <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-green-700">
+                        <h2 class="text-2xl font-bold text-green-900 mb-4">Personality & Background</h2>
+                        <div class="space-y-4">
+                            ${[
+                                {field: 'personality', label: 'Personality Traits', rows: 2},
+                                {field: 'ideals', label: 'Ideals', rows: 2},
+                                {field: 'bonds', label: 'Bonds', rows: 2},
+                                {field: 'flaws', label: 'Flaws', rows: 2},
+                                {field: 'backstory', label: 'Backstory', rows: 6}
+                            ].map(({field, label, rows}) => `
+                                <div>
+                                    <label class="block font-bold mb-2">${label}</label>
+                                    <textarea 
+                                        onchange="character.${field} = this.value; render();"
+                                        class="w-full px-3 py-2 border-2 border-gray-300 rounded resize-none"
+                                        rows="${rows}"
+                                        placeholder="${label === 'Backstory' ? 'Write your character\'s backstory here...' : ''}">${character[field]}</textarea>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-blue-700">
+                        <h2 class="text-2xl font-bold text-blue-900 mb-4">Session Notes</h2>
+                        <textarea 
+                            onchange="character.sessionNotes = this.value; render();"
+                            class="w-full px-3 py-2 border-2 border-gray-300 rounded resize-none"
+                            rows="8"
+                            placeholder="Session notes, quest log, important NPCs...">${character.sessionNotes}</textarea>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDiceTab() {
+            return `
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-red-700">
+                        <h2 class="text-2xl font-bold text-red-900 mb-4">Dice Roller</h2>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <h3 class="font-bold mb-2">Standard Rolls</h3>
+                                <div class="grid grid-cols-4 gap-2">
+                                    ${[4, 6, 8, 10, 12, 20, 100].map(sides => `
+                                        <button onclick="rollDice(${sides})" 
+                                            class="px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded font-bold text-lg">
+                                            d${sides}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 class="font-bold mb-2">Ability Checks</h3>
+                                <div class="grid grid-cols-2 gap-2">
+                                    ${abilities.map(ability => `
+                                        <button onclick="rollDice(20, ${calcModifier(character[ability])}, '${capitalize(ability)} Check')" 
+                                            class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold">
+                                            ${capitalize(ability)} ${formatBonus(calcModifier(character[ability]))}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 class="font-bold mb-2">Saving Throws</h3>
+                                <div class="grid grid-cols-2 gap-2">
+                                    ${abilities.map(ability => `
+                                        <button onclick="rollDice(20, ${calcSaveBonus(ability)}, '${capitalize(ability)} Save')" 
+                                            class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-bold">
+                                            ${capitalize(ability)} ${formatBonus(calcSaveBonus(ability))}
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 class="font-bold mb-2">Advantage/Disadvantage</h3>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button onclick="rollWithAdvantage(20, 0, 'Advantage')" 
+                                        class="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-bold">
+                                        🎲 Advantage
+                                    </button>
+                                    <button onclick="rollWithDisadvantage(20, 0, 'Disadvantage')" 
+                                        class="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded font-bold">
+                                        🎲 Disadvantage
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 class="font-bold mb-2">Initiative</h3>
+                                <button onclick="rollDice(20, ${calcModifier(character.dexterity)}, 'Initiative')" 
+                                    class="w-full px-3 py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded font-bold text-lg">
+                                    ⚔️ Roll Initiative ${formatBonus(calcModifier(character.dexterity))}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-lg shadow-lg border-2 border-red-700">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold text-red-900">Roll History</h2>
+                            <button onclick="diceRolls = []; render();" 
+                                class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm">
+                                Clear
+                            </button>
+                        </div>
+                        <div class="space-y-2 max-h-96 overflow-y-auto">
+                            ${diceRolls.length === 0 ? '<p class="text-gray-500 text-center py-8">No rolls yet. Start rolling!</p>' : ''}
+                            ${diceRolls.map(roll => `
+                                <div class="p-3 bg-gray-100 rounded border-2 border-gray-300">
+                                    <div class="flex justify-between items-center mb-1">
+                                        <span class="font-bold text-lg">${roll.label}</span>
+                                        <span class="text-xs text-gray-500">${roll.time}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-2xl font-bold text-red-900">${roll.total}</span>
+                                        <span class="text-sm text-gray-600">
+                                            (Roll: ${roll.roll}${roll.modifier !== 0 ? `, Mod: ${formatBonus(roll.modifier)}` : ''})
+                                        </span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Initial render
+        try {
+            render();
+        } catch (error) {
+            console.error('Initial render error:', error);
+            document.getElementById('app').innerHTML = '<div class="bg-red-100 p-8"><h1 class="text-2xl font-bold text-red-900">Error Loading Character Sheet</h1><p>' + error.message + '</p><p class="mt-4">Try refreshing the page.</p></div>';
+        }
+    </script>
+</body>
+</html>

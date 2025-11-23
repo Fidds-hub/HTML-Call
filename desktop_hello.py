@@ -7,3 +7,6 @@ def create_hello_file():
     print(f"File Created At {file_path}")
     
 create_hello_file()
+
+if__name__ == "__main__":
+    create_hello_file()

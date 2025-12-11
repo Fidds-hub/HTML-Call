@@ -1,176 +1,122 @@
-import cv2
+import vlc
+import time
+import sys
 import tkinter as tk
-from tkinter import Label, Scale, Button, HORIZONTAL, filedialog
-from PIL import Image, ImageTk
-from pathlib import Path
+from tkinter import filedialog
+from threading import Thread
 
-class VideoPlayer:
-    """Simple video player module"""
-    
-    def __init__(self, title="Video Player", width=800, height=600):
-        self.title = title
-        self.width = width
-        self.height = height
-        
-        self.cap = None
-        self.total_frames = 0
-        self.fps = 30
-        self.playing = False
-        self.current_frame = 0
-        
-        # Create window
-        self.root = tk.Tk()
-        self.root.title(self.title)
-        self.root.geometry(f"{self.width}x{self.height + 150}")
-        
-        # Video display label
-        self.label = Label(self.root, bg="black")
-        self.label.pack(fill="both", expand=True)
-        
-        # Controls frame
-        controls = tk.Frame(self.root)
-        controls.pack(fill="x", padx=5, pady=5)
-        
-        # Browse button
-        browse_btn = Button(controls, text="Browse Video", command=self.browse_file, width=15)
-        browse_btn.pack(side="left", padx=5)
-        
-        # File label
-        self.file_label = Label(controls, text="No file selected", fg="gray")
-        self.file_label.pack(side="left", padx=10, fill="x", expand=True)
-        
-        # Playback controls frame
-        playback = tk.Frame(self.root)
-        playback.pack(fill="x", padx=5, pady=5)
-        
-        # Play/Pause button
-        self.play_btn = Button(playback, text="Play", command=self.toggle_play, width=10, state="disabled")
-        self.play_btn.pack(side="left", padx=5)
-        
-        # Stop button
-        self.stop_btn = Button(playback, text="Stop", command=self.stop, width=10, state="disabled")
-        self.stop_btn.pack(side="left", padx=5)
-        
-        # Slider
-        self.slider = Scale(playback, from_=0, to=100, orient=HORIZONTAL, command=self.seek, state="disabled")
-        self.slider.pack(side="left", fill="x", expand=True, padx=5)
-        
-        # Time label
-        self.time_label = Label(playback, text="0 / 0")
-        self.time_label.pack(side="right", padx=5)
-        
-        self.root.protocol("WM_DELETE_WINDOW", self.quit)
-    
-    def browse_file(self):
-        """Open file browser to select video"""
-        file_path = filedialog.askopenfilename(
-            title="Select a video file",
-            filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv"), ("All files", "*.*")]
-        )
-        
-        if file_path:
-            self.load_video(file_path)
-    
-    def load_video(self, video_path):
-        """Load a video file"""
-        if self.cap:
-            self.cap.release()
-        
-        self.cap = cv2.VideoCapture(str(video_path))
-        
-        if not self.cap.isOpened():
-            self.file_label.config(text="Error: Could not open video", fg="red")
-            return
-        
-        self.total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
-        self.current_frame = 0
-        self.playing = False
-        
-        # Update UI
-        self.file_label.config(text=Path(video_path).name, fg="black")
-        self.slider.config(from_=0, to=self.total_frames - 1, state="normal")
-        self.slider.set(0)
-        self.time_label.config(text=f"0 / {self.total_frames}")
-        self.play_btn.config(state="normal", text="Play")
-        self.stop_btn.config(state="normal")
-        
-        self.update_frame()
-    
-    def update_frame(self):
-        """Update video frame"""
-        if not self.cap or not self.cap.isOpened():
-            self.root.after(100, self.update_frame)
-            return
-        
-        if self.playing:
-            ret, frame = self.cap.read()
-            
-            if ret:
-                self.current_frame = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
-                self.slider.set(self.current_frame)
-                self.time_label.config(text=f"{self.current_frame} / {self.total_frames}")
-            else:
-                self.playing = False
-                self.play_btn.config(text="Play")
-        
-        # Display current frame
-        if self.cap.isOpened():
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame)
-            ret, frame = self.cap.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = cv2.resize(frame, (self.width, self.height))
-                
-                img = Image.fromarray(frame)
-                photo = ImageTk.PhotoImage(img)
-                
-                self.label.config(image=photo)
-                self.label.image = photo
-        
-        if self.playing:
-            delay = int(1000 / self.fps) if self.fps > 0 else 33
-            self.root.after(delay, self.update_frame)
-        else:
-            self.root.after(100, self.update_frame)
-    
-    def toggle_play(self):
-        """Play/Pause"""
-        self.playing = not self.playing
-        self.play_btn.config(text="Pause" if self.playing else "Play")
-        if self.playing:
-            self.update_frame()
-    
-    def stop(self):
-        """Stop playback"""
-        self.playing = False
-        self.current_frame = 0
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        self.slider.set(0)
-        self.play_btn.config(text="Play")
-    
-    def seek(self, frame_num):
-        """Seek to frame"""
-        frame_num = int(float(frame_num))
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
-        self.current_frame = frame_num
-        self.time_label.config(text=f"{self.current_frame} / {self.total_frames}")
-    
-    def quit(self):
-        """Close player"""
-        self.playing = False
-        if self.cap:
-            self.cap.release()
-        self.root.destroy()
-    
-    def play(self):
-        """Start the player"""
-        self.update_frame()
-        self.root.mainloop()
+# --- Global Variables ---
+player = None
+instance = None
+root = None
 
+def select_file_and_play():
+    """
+    Opens the file dialog and starts the VLC player in a separate thread.
+    """
+    global player, instance, root
 
-# ============ USAGE EXAMPLE ============
+    # 1. Open File Dialog
+    # Tkinter's askopenfilename provides a native OS file selection window.
+    video_path = filedialog.askopenfilename(
+        title="Select Video File",
+        # You can add common video file extensions here
+        filetypes=[
+            ("Video files", "*.mp4 *.avi *.mkv *.mov *.wmv"), 
+            ("All files", "*.*")
+        ]
+    )
+
+    if not video_path:
+        print("No file selected. Aborting playback.")
+        return
+
+    print(f"Selected file: {video_path}")
+    
+    # 2. Stop existing playback if any
+    if player and player.is_playing() or player and player.get_state() == vlc.State.Paused:
+        print("Stopping current playback...")
+        player.stop()
+        
+    # 3. Start playback in a new thread
+    # Running VLC playback in a separate thread prevents the video window
+    # from freezing the Tkinter main loop (and vice versa).
+    playback_thread = Thread(target=start_vlc_playback, args=(video_path,))
+    playback_thread.daemon = True # Allows program to exit even if thread is running
+    playback_thread.start()
+
+def start_vlc_playback(video_path):
+    """
+    Handles the core VLC initialization and playback logic.
+    This runs in a separate thread.
+    """
+    global player, instance
+
+    # 1. Initialize VLC Instance (Only once is ideal, but safe to re-init if needed)
+    if instance is None:
+        print("Initializing VLC instance...")
+        try:
+            instance = vlc.Instance(sys.argv)
+        except Exception:
+            instance = vlc.Instance()
+    
+    # 2. Create Media Player if it doesn't exist
+    if player is None:
+        player = instance.media_player_new()
+        
+    # 3. Create Media Object from File and set it to the player
+    media = instance.media_new(video_path)
+    player.set_media(media)
+
+    # 4. Start Playback
+    print(f"Starting playback for: {video_path}")
+    player.play()
+
+    # The Tkinter window manages the exit, but we can print the controls
+    print("\n--- Playback Controls ---")
+    print("Video is playing in a separate window.")
+    print("Close the main 'VLC Player' window or the video window to exit.")
+    print("-------------------------\n")
+    
+def setup_gui():
+    """
+    Sets up the minimal Tkinter interface.
+    """
+    global root
+    
+    # Initialize the main window
+    root = tk.Tk()
+    root.title("VLC Player")
+    
+    # Optional: Hide the root window if you only want the file dialog to show initially.
+    # root.withdraw()
+
+    # Define the button style and text
+    browse_button = tk.Button(
+        root, 
+        text="Browse and Play Video", 
+        command=select_file_and_play,
+        font=("Arial", 12),
+        padx=20,
+        pady=10
+    )
+    browse_button.pack(pady=50, padx=50)
+
+    # Handle window close event to clean up VLC resources
+    def on_closing():
+        global player
+        if player:
+            print("Stopping VLC player and cleaning up resources...")
+            player.stop()
+            player = None
+            # Note: The VLC instance will be destroyed when the script exits
+        root.destroy()
+        sys.exit() # Ensure the script fully exits the threads
+
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+    
+    # Run the Tkinter event loop
+    root.mainloop()
 
 if __name__ == "__main__":
-    player = VideoPlayer(title="My Video Player", width=800, height=600)
-    player.play()
+    setup_gui()

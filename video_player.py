@@ -1,122 +1,207 @@
 import vlc
-import time
 import sys
+import time
+import platform
 import tkinter as tk
-from tkinter import filedialog
-from threading import Thread
+from tkinter import filedialog, ttk
 
-# --- Global Variables ---
-player = None
-instance = None
-root = None
-
-def select_file_and_play():
-    """
-    Opens the file dialog and starts the VLC player in a separate thread.
-    """
-    global player, instance, root
-
-    # 1. Open File Dialog
-    # Tkinter's askopenfilename provides a native OS file selection window.
-    video_path = filedialog.askopenfilename(
-        title="Select Video File",
-        # You can add common video file extensions here
-        filetypes=[
-            ("Video files", "*.mp4 *.avi *.mkv *.mov *.wmv"), 
-            ("All files", "*.*")
-        ]
-    )
-
-    if not video_path:
-        print("No file selected. Aborting playback.")
-        return
-
-    print(f"Selected file: {video_path}")
-    
-    # 2. Stop existing playback if any
-    if player and player.is_playing() or player and player.get_state() == vlc.State.Paused:
-        print("Stopping current playback...")
-        player.stop()
+class MinimalVideoPlayer:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Minimal VLC Player")
+        self.root.geometry("800x600")
         
-    # 3. Start playback in a new thread
-    # Running VLC playback in a separate thread prevents the video window
-    # from freezing the Tkinter main loop (and vice versa).
-    playback_thread = Thread(target=start_vlc_playback, args=(video_path,))
-    playback_thread.daemon = True # Allows program to exit even if thread is running
-    playback_thread.start()
+        # --- VLC Instance Setup ---
+        self.instance = vlc.Instance()
+        self.player = self.instance.media_player_new()
+        self.is_playing = False
 
-def start_vlc_playback(video_path):
-    """
-    Handles the core VLC initialization and playback logic.
-    This runs in a separate thread.
-    """
-    global player, instance
-
-    # 1. Initialize VLC Instance (Only once is ideal, but safe to re-init if needed)
-    if instance is None:
-        print("Initializing VLC instance...")
-        try:
-            instance = vlc.Instance(sys.argv)
-        except Exception:
-            instance = vlc.Instance()
-    
-    # 2. Create Media Player if it doesn't exist
-    if player is None:
-        player = instance.media_player_new()
+        # --- UI Layout ---
+        self._setup_ui()
         
-    # 3. Create Media Object from File and set it to the player
-    media = instance.media_new(video_path)
-    player.set_media(media)
+        # --- Events ---
+        # Handle closing the window properly
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    # 4. Start Playback
-    print(f"Starting playback for: {video_path}")
-    player.play()
+    def _setup_ui(self):
+        """Builds the GUI elements."""
+        
+        # 1. Video Display Area (The "Screen")
+        # We use a black Canvas to act as the video container
+        self.video_frame = tk.Canvas(self.root, bg="black")
+        self.video_frame.pack(fill=tk.BOTH, expand=True)
 
-    # The Tkinter window manages the exit, but we can print the controls
-    print("\n--- Playback Controls ---")
-    print("Video is playing in a separate window.")
-    print("Close the main 'VLC Player' window or the video window to exit.")
-    print("-------------------------\n")
-    
-def setup_gui():
-    """
-    Sets up the minimal Tkinter interface.
-    """
-    global root
-    
-    # Initialize the main window
-    root = tk.Tk()
-    root.title("VLC Player")
-    
-    # Optional: Hide the root window if you only want the file dialog to show initially.
-    # root.withdraw()
+        # 2. Controls Container
+        controls_frame = tk.Frame(self.root, bg="#f0f0f0", pady=5)
+        controls_frame.pack(fill=tk.X, side=tk.BOTTOM)
 
-    # Define the button style and text
-    browse_button = tk.Button(
-        root, 
-        text="Browse and Play Video", 
-        command=select_file_and_play,
-        font=("Arial", 12),
-        padx=20,
-        pady=10
-    )
-    browse_button.pack(pady=50, padx=50)
+        # 3. Progress Slider
+        self.time_var = tk.DoubleVar()
+        self.progress_slider = tk.Scale(
+            controls_frame, 
+            variable=self.time_var, 
+            command=self.on_seek,
+            orient="horizontal",
+            showvalue=0,  # Hide the number above the slider
+            bg="#f0f0f0",
+            troughcolor="#d0d0d0",
+            sliderlength=15
+        )
+        self.progress_slider.pack(fill=tk.X, padx=10, pady=5)
 
-    # Handle window close event to clean up VLC resources
-    def on_closing():
-        global player
-        if player:
-            print("Stopping VLC player and cleaning up resources...")
-            player.stop()
-            player = None
-            # Note: The VLC instance will be destroyed when the script exits
-        root.destroy()
-        sys.exit() # Ensure the script fully exits the threads
+        # 4. Buttons & Volume
+        btn_frame = tk.Frame(controls_frame, bg="#f0f0f0")
+        btn_frame.pack(fill=tk.X, padx=10)
 
-    root.protocol("WM_DELETE_WINDOW", on_closing)
-    
-    # Run the Tkinter event loop
-    root.mainloop()
+        self.btn_load = tk.Button(btn_frame, text="Load", command=self.load_video, width=10)
+        self.btn_load.pack(side=tk.LEFT, padx=5)
+
+        self.btn_play = tk.Button(btn_frame, text="Play", command=self.toggle_play, width=10)
+        self.btn_play.pack(side=tk.LEFT, padx=5)
+
+        self.btn_stop = tk.Button(btn_frame, text="Stop", command=self.stop, width=10)
+        self.btn_stop.pack(side=tk.LEFT, padx=5)
+
+        # Volume Label and Slider
+        tk.Label(btn_frame, text="Vol:", bg="#f0f0f0").pack(side=tk.LEFT, padx=(20, 5))
+        self.vol_slider = tk.Scale(
+            btn_frame, 
+            from_=0, to=100, 
+            orient="horizontal", 
+            command=self.set_volume,
+            bg="#f0f0f0",
+            length=100,
+            showvalue=0
+        )
+        self.vol_slider.set(50) # Default volume
+        self.vol_slider.pack(side=tk.LEFT)
+
+        # Time Label (00:00 / 00:00)
+        self.lbl_time = tk.Label(btn_frame, text="00:00 / 00:00", bg="#f0f0f0")
+        self.lbl_time.pack(side=tk.RIGHT, padx=10)
+
+    def load_video(self):
+        """Opens file dialog and loads media."""
+        filepath = filedialog.askopenfilename(
+            filetypes=[("Video", "*.mp4 *.avi *.mkv *.mov"), ("All", "*.*")]
+        )
+        if not filepath:
+            return
+
+        # Create media
+        media = self.instance.media_new(filepath)
+        self.player.set_media(media)
+
+        # EMBEDDING LOGIC:
+        # We must tell VLC to draw inside our Tkinter Canvas using the OS-specific Window ID.
+        window_id = self.video_frame.winfo_id()
+        
+        system_platform = platform.system()
+        if system_platform == "Windows":
+            self.player.set_hwnd(window_id)
+        elif system_platform == "Linux":
+            self.player.set_xwindow(window_id)
+        elif system_platform == "Darwin": # macOS
+            # Note: macOS embedding with Tkinter can be tricky depending on the VLC version.
+            try:
+                # This requires an integer ID.
+                self.player.set_nsobject(int(window_id))
+            except Exception:
+                print("MacOS embedding warning: Might open in separate window.")
+
+        self.play()
+
+    def play(self):
+        """Starts playback and the UI update loop."""
+        self.player.play()
+        self.btn_play.config(text="Pause")
+        self.is_playing = True
+        self.root.after(100, self.update_progress)
+
+    def toggle_play(self):
+        """Toggles between Play and Pause."""
+        if self.player.get_media() is None:
+            return # Do nothing if no video loaded
+
+        if self.player.is_playing():
+            self.player.pause()
+            self.btn_play.config(text="Play")
+            self.is_playing = False
+        else:
+            self.player.play()
+            self.btn_play.config(text="Pause")
+            self.is_playing = True
+            self.root.after(100, self.update_progress)
+
+    def stop(self):
+        """Stops playback and resets UI."""
+        self.player.stop()
+        self.btn_play.config(text="Play")
+        self.time_var.set(0)
+        self.lbl_time.config(text="00:00 / 00:00")
+        self.is_playing = False
+
+    def set_volume(self, val):
+        """Sets the volume (0-100)."""
+        volume = int(val)
+        self.player.audio_set_volume(volume)
+
+    def on_seek(self, val):
+        """Handles slider drag to seek video."""
+        # Note: 'val' comes in as a string from the Scale widget
+        if self.player.get_media() is None:
+            return
+            
+        # Only seek if the difference is significant to avoid jitter during auto-update
+        # (This is a simplified approach; usually you'd check if user is clicking the mouse)
+        target_time = int(float(val))
+        current_time = self.player.get_time()
+        
+        # If the seek request is far from current time, perform seek
+        if abs(target_time - current_time) > 1000: 
+            self.player.set_time(target_time)
+
+    def update_progress(self):
+        """
+        Periodically updates the slider and time label.
+        Refreshes every 500ms.
+        """
+        if not self.is_playing:
+            return
+
+        # Get total duration (length) and current time
+        length = self.player.get_length() # in ms
+        current_time = self.player.get_time() # in ms
+
+        # Update slider range and value
+        # We only update range if it changed (optimization)
+        if length > 0:
+            if self.progress_slider.cget("to") != length:
+                self.progress_slider.config(to=length)
+            
+            # Update the slider position to match video
+            self.time_var.set(current_time)
+
+            # Update Label Text
+            self.lbl_time.config(text=f"{self._format_time(current_time)} / {self._format_time(length)}")
+
+        # Schedule next update
+        self.root.after(500, self.update_progress)
+
+    def _format_time(self, ms):
+        """Helper to convert milliseconds to MM:SS format."""
+        if ms < 0: return "00:00"
+        seconds = int(ms / 1000)
+        minutes, seconds = divmod(seconds, 60)
+        return f"{minutes:02}:{seconds:02}"
+
+    def on_close(self):
+        """Cleanup logic."""
+        self.player.stop()
+        self.root.destroy()
+        sys.exit()
 
 if __name__ == "__main__":
-    setup_gui()
+    root = tk.Tk()
+    app = MinimalVideoPlayer(root)
+    root.mainloop()
